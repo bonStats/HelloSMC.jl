@@ -1,0 +1,13 @@
+name = "HelloSMC"
+uuid = "54efeb62-d96d-4d7e-a673-6982cd85b4bf"
+authors = ["Joshua J Bon"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

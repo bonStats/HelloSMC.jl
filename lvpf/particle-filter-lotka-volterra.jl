@@ -6,7 +6,7 @@ using DelimitedFiles
 using Statistics
 using Plots
 
-y = readdlm("examples/prey_pred.csv", ',', Int64)
+y = readdlm("lvpf/prey_pred.csv", ',', Int64)
 n = size(y,2)
 ts = 1.0:1.0:50.0
 
@@ -52,10 +52,10 @@ function lG(t::Int64, particle::LVParticle, ::Nothing)
     return logpdf(preydist, y[1,t]) + logpdf(preddist, y[2,t])
 end
 
-N = 2^12
-threads = 1
-κ = 0.5 # relative ESS threshold
-saveall = true
+N = 2^12        # number of particles
+threads = 1     # number of threads
+κ = 0.5         # relative ESS threshold
+saveall = true  # save full trajectory 
 model = SMCModel(M!, lG, n, LVParticle, Nothing)
 smcio = SMCIO{model.particle, model.pScratch}(N, n, threads, saveall, κ)
 smc!(model, smcio)

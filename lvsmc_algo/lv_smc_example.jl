@@ -74,7 +74,10 @@ function log_prior(θ)
 end
 
 include("smc_sampler_lanneal.jl")
-particles = smc_sampler_lanneal(1000, sim_prior, log_prior, log_like, γ = range(0, stop=1, length=10).^5, R=20)
+
+
+include("smc_sampler_lanneal_adaptive.jl")
+particles_adaptive = smc_sampler_lanneal_adaptive(1000, sim_prior, log_prior, log_like)
 
 using KernelDensity
 
@@ -82,7 +85,7 @@ names = ["α", "β", "γ", "σ"]
 p = []
 for i in 1:4
     # dens = kde(exp.(samps[:,i]))
-    dens = kde(particles[:,i])
+    dens = kde(particles_adaptive[:,i])
 
     #x_tic = min(dens.x)
     p_l = plot(dens, title = names[i], ticks = :native)

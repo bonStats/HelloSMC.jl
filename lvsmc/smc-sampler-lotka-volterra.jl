@@ -122,13 +122,12 @@ smcio = SMCIO{model.particle, model.pScratch}(N, n, threads, saveall, κ)
 smc!(model, smcio)
 
 # η̂ = prior * likelhood
-ps = vec.(smcio.zetas)
-psm = Matrix(hcat(ps...)')
+ps = Matrix(hcat(vec.(smcio.zetas)...)')
 ws = Weights(smcio.ws)
 
 # mean and cov
-μ = mean(ps, ws)
-Σ = cov(psm, ws)
+μ = mean(ps, ws, dims = 1)
+Σ = cov(ps, ws)
 
 # estimate variance of test function = var(σ)
 SequentialMonteCarlo.V(smcio, p -> (p.σ - μ[4])^2, true, true, n)

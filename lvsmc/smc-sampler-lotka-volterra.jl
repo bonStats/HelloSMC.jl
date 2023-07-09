@@ -10,26 +10,25 @@ using StatsPlots
 
 y_full = readdlm("lvsmc/prey_pred2.csv", ',', Float64)
 n_y = size(y_full,2) - 1 # exclude initial value
-ts = 1.0:1.0:n_y # times steps for data
+ts = 2*(1.0:1.0:n_y) # times steps for data
 
 # particle
 mutable struct LVParamParticle
-    logα::Float64 
-    logβ::Float64 
-    logγ::Float64
-    logσ::Float64
+    α::Float64 
+    β::Float64 
+    γ::Float64
+    σ::Float64
     LVParamParticle() = new() # initialise empty
 end
 
-Base.vec(p::LVParamParticle) = [p.logα, p.logβ, p.logγ, p.logσ]
-vecexp(p::LVParamParticle) = exp.(vec(p))
+Base.vec(p::LVParamParticle) = [p.α, p.β, p.γ, p.σ]
 
-# Prior on θ = log([α, β, γ, σ])
-priors = product_distribution([Uniform(-2, 1),Uniform(-8,-1),Uniform(-2, 1),Uniform(-2, 3)])
+# Prior on θ = [α, β, γ, σ]
+priors = product_distribution([Uniform(0., 1), Uniform(0,0.1), Uniform(0, 1), Uniform(0.1, 7)])
 
-function log_prior(logθ::Vector{Float64})
+function log_prior(θ::Vector{Float64})
     # Prior distributions.
-    return sum(logpdf.(priors, logθ))
+    return sum(logpdf.(priors, θ))
 end
 
 # Define Lotka-Volterra model.
@@ -49,18 +48,17 @@ end
 
 # Define initial-value problem.
 u0 = y_full[:,1]
-p_true = [0.5, 0.0025, 0.3, 1.]
 tspan = (0.0, 50.0)
-prob = ODEProblem(lotka_volterra, u0, tspan, p_true[1:3])
+prob = ODEProblem(lotka_volterra, u0, tspan, [0.1, 0.1, 0.1])
 
 y = y_full[:,2:end]
-temps = 0.5 .^ (12:-1:0)
+temps = 0.8 .^ (12:-1:0)
 n = length(temps) - 1
 
-function log_like(logθ::Vector{Float64})
-    α, β, γ, σ =  exp.(logθ)
+function log_like(θ::Vector{Float64})
+    p = θ[1:3]
+    σ = θ[4]
     # Simulate Lotka-Volterra model. 
-    p = [α, β, γ]
     predicted = solve(prob, Tsit5(); p=p, saveat = ts, verbose=false, alg_hints = :stiff)
 
     if !SciMLBase.successful_retcode(predicted.retcode)
@@ -79,7 +77,7 @@ end
 
 
 function proposal(currθ::Vector{Float64})
-    return MvNormal(currθ, 0.25^2 * I)
+    return MvNormal(currθ, 0.01^2 * I)
 end
 
 # Metropolis-Hastings Kernel with Random Walk proposal
@@ -98,14 +96,14 @@ end
 # mutation kernel
 function M!(new::LVParamParticle, rng, t::Int64, old::LVParamParticle, ::Nothing)
     if t == 1
-        logθ = rand(rng, priors)
+        θ = rand(rng, priors)
     else
         # proposal
         propθ = rand(rng, proposal(vec(old)))
-        logθ = mh(rng, vec(old), propθ, temps[t])
+        θ = mh(rng, vec(old), propθ, temps[t])
     end
 
-    new.logα, new.logβ, new.logγ, new.logσ = logθ
+    new.α, new.β, new.γ, new.σ = θ
 
 end
 
@@ -124,7 +122,7 @@ smcio = SMCIO{model.particle, model.pScratch}(N, n, threads, saveall, κ)
 smc!(model, smcio)
 
 # η̂ = prior * likelhood
-ps = vecexp.(smcio.zetas)
+ps = vec.(smcio.zetas)
 psm = Matrix(hcat(ps...)')
 ws = Weights(smcio.ws)
 
@@ -133,7 +131,7 @@ ws = Weights(smcio.ws)
 Σ = cov(psm, ws)
 
 # estimate variance of test function = var(σ)
-SequentialMonteCarlo.V(smcio, p-> (exp(p.logσ) - μ[4])^2, true, true, n)
+SequentialMonteCarlo.V(smcio, p -> (p.σ - μ[4])^2, true, true, n)
 
 # kde
 density(psm[:,1], weights = ws)
@@ -141,7 +139,7 @@ density(psm[:,2], weights = ws)
 density(psm[:,3], weights = ws)
 density(psm[:,4], weights = ws)
 
-ps = [Matrix(hcat(vecexp.(zs)...)') for zs in smcio.allZetas]
+ps = [Matrix(hcat(vec.(zs)...)') for zs in smcio.allZetas]
 ws = Weights.(smcio.allWs)
 Σs = cov.(ps, ws)
 
@@ -152,14 +150,17 @@ end
 # mutation kernel
 function M2!(new::LVParamParticle, rng, t::Int64, old::LVParamParticle, ::Nothing)
     if t == 1
-        logθ = rand(rng, priors)
+        θ = rand(rng, priors)
     else
         # proposal
-        propθ = rand(rng, proposal(vec(old), t))
-        logθ = mh(rng, vec(old), propθ, temps2[t])
+        θ = vec(old)
+        for i in 1:5
+            propθ = rand(rng, proposal(θ, t))
+            θ = mh(rng, θ, propθ, temps[t])
+        end
     end
 
-    new.logα, new.logβ, new.logγ, new.logσ = logθ
+    new.α, new.β, new.γ, new.σ = θ
 
 end
 
@@ -168,7 +169,7 @@ smcio2 = SMCIO{model.particle, model.pScratch}(N, n, threads, saveall, κ)
 smc!(model2, smcio2)
 
 # η̂ = prior * likelhood
-ps2 = Matrix(hcat(vecexp.(smcio2.zetas)...)')
+ps2 = Matrix(hcat(vec.(smcio2.zetas)...)')
 ws2 = Weights(smcio2.ws)
 
 # mean and cov
@@ -185,4 +186,4 @@ density(ps2[:,3], weights = ws2)
 density(ps2[:,4], weights = ws2)
 
 # estimate variance of test function = var(σ)
-SequentialMonteCarlo.V(smcio2, p-> (exp(p.logσ) - μ[4])^2, true, true, n)
+SequentialMonteCarlo.V(smcio2, p-> (p.σ - μ[4])^2, true, true, n)
